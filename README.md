@@ -1,5 +1,10 @@
 # Sea-Grant-Capstone2026
 Repository for the Sea Grant California Johnson Lab Bioinformatics Capstone 2026 Team 
+Repository Structure--
+
+- Preprocessing Steps.Rmd — SNP filtering, quality control, Hardy–Weinberg filtering, and LD clumping.
+- pcadapt Steps.Rmd — PCA-based genome scan for candidate loci associated with population structure.
+- OutFLANK Steps.Rmd — FST-based genome scan used to identify loci showing elevated genetic differentiation among estuary populations.
 
 Overview--
   This project was completed as part of the California Sea Grant Bioinformatics Capstone. We analyzed single nucleotide polymorphism (SNP) data from Olympia oysters (Ostrea lurida) collected across         multiple California estuaries to investigate genetic diversity, population structure, and potential adaptive variation.
