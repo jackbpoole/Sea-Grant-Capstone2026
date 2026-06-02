@@ -1,7 +1,7 @@
 # Sea-Grant-Capstone2026
 Repository for the Sea Grant California Johnson Lab Bioinformatics Capstone 2026 Team 
 
-Repository Structure--
+Repository Structure:
 
 - Preprocessing Steps.Rmd — SNP filtering, quality control, Hardy–Weinberg filtering, and LD clumping.
 - pcadapt Steps.Rmd — PCA-based genome scan for candidate loci associated with population structure.
