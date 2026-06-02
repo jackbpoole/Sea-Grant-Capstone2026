@@ -1,5 +1,6 @@
 # Sea-Grant-Capstone2026
 Repository for the Sea Grant California Johnson Lab Bioinformatics Capstone 2026 Team 
+
 Repository Structure--
 
 - Preprocessing Steps.Rmd — SNP filtering, quality control, Hardy–Weinberg filtering, and LD clumping.
