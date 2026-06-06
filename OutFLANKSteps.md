@@ -1,74 +1,98 @@
----
-title: "OutFLANK Analysis"
-author: "Larissa Firmansyah"
-date: "2026-05-29"
-output: html_document
----
+# -----------------------------
+# 1. Load required packages
+# -----------------------------
 
-This R Markdown file runs OutFLANK on the filtered and clumped Olympia oyster SNP dataset. The final outputs are:
-
-- `outflank_results_(geno_label).csv`
-- `outflank_outliers_(geno_label).csv`
-
-Set your parameters at the top.
-
-```{r setup}
+# vcfR is used to read and extract genotype information from VCF files
 library(vcfR)
+
+# OutFLANK is used to calculate FST and identify outlier SNPs
 library(OutFLANK)
 
+
 # -----------------------------
-# Parameters
+# 2. Define input file paths
 # -----------------------------
 
-# Choose which filtered/clumped VCF to run
-geno_label <- "geno10"
-# geno_label <- "geno075"
+# Path to the filtered and LD-clumped VCF file
+vcf_file <- "/mnt/jupiter/johnsonlab/Capstone_proj/Capstone_2026/Preprocessing/n218_filtered_snps_geno_075_clumped.recode.vcf"
 
-# Input VCF
-vcf_file <- "/mnt/jupiter/johnsonlab/Capstone_proj/Capstone_2026/Preprocessing/n218_filtered_snps_geno_10_clumped.recode.vcf"
-# vcf_file <- "/mnt/jupiter/johnsonlab/Capstone_proj/Capstone_2026/Preprocessing/n218_filtered_snps_geno_075_clumped.recode.vcf"
-
-# Metadata file
+# Path to metadata file containing sample numbers and estuary names
 metadata_file <- "/mnt/jupiter/johnsonlab/Capstone_proj/Capstone_2026/outflank/sample_table_218_clean (2).csv"
 
-# Output directory
-out_dir <- "/mnt/jupiter/johnsonlab/Capstone_proj/Capstone_2026/outflank"
 
-# OutFLANK settings
-hmin_value <- 0.1
-q_threshold <- 0.05
-```
+# -----------------------------
+# 3. Read metadata
+# -----------------------------
 
-## Read metadata
-
-```{r metadata}
+# Read metadata into R
 metadata <- read.csv(metadata_file, stringsAsFactors = FALSE)
 
+# Remove extra spaces from estuary names
 metadata$Estuary <- trimws(metadata$Estuary)
 
-cat("Number of samples in metadata:", nrow(metadata), "\n")
-print(table(metadata$Estuary))
-```
+# Check metadata formatting
+head(metadata)
 
-## Read VCF and extract genotype calls
+# Check sample counts by estuary
+table(metadata$Estuary)
 
-```{r read-vcf}
+
+# -----------------------------
+# 4. Read VCF file
+# -----------------------------
+
+# Load the VCF file
 vcf <- read.vcfR(vcf_file, verbose = FALSE)
 
+# Extract fixed VCF information, including chromosome/scaffold and position
 fixdf <- getFIX(vcf)
+
+# Create unique locus names using scaffold and position
 locusNames <- paste0(fixdf[, "CHROM"], ":", fixdf[, "POS"])
 
+
+# -----------------------------
+# 5. Extract genotype calls
+# -----------------------------
+
+# Extract genotype field from the VCF
 gt <- extract.gt(vcf, element = "GT", as.numeric = FALSE)
 
-cat("VCF dimensions, loci x individuals:\n")
-print(dim(gt))
-```
+# Check SNP and sample dimensions
+dim(gt)
 
-## Convert genotypes to dosage format
 
-OutFLANK needs diploid genotype data coded as 0, 1, or 2, where the value represents the number of alternate alleles. Missing genotypes are converted to `NA` first.
+# -----------------------------
+# 6. Match samples to estuary populations
+# -----------------------------
 
-```{r genotype-dosage}
+# Get sample names from the VCF
+sampleNames <- colnames(gt)
+
+# Extract sample number from names like "1_1", "10_10", etc.
+sampleNums <- as.integer(sub("_.*", "", sampleNames))
+
+# Match sample numbers to estuary names in metadata
+popNames <- metadata$Estuary[
+  match(sampleNums, metadata$Sample.number)
+]
+
+# Confirm every sample matched to an estuary
+sum(is.na(popNames))
+
+# View population counts used in OutFLANK
+table(popNames)
+
+
+# -----------------------------
+# 7. Convert genotypes to dosage format
+# -----------------------------
+
+# Function to convert VCF genotype calls into 0/1/2 dosage format
+# 0 = homozygous reference
+# 1 = heterozygous
+# 2 = homozygous alternate
+# NA = missing or unsupported genotype
 gt_to_dosage <- function(x) {
   if (is.na(x) || x %in% c(".", "./.", ".|.")) return(NA_real_)
   x <- gsub("\\|", "/", x)
@@ -78,107 +102,97 @@ gt_to_dosage <- function(x) {
   if (any(is.na(vals))) return(NA_real_)
   s <- sum(vals)
   if (!s %in% 0:2) return(NA_real_)
-  s
+  return(s)
 }
 
+# Apply dosage conversion to all SNPs and individuals
 dos <- apply(gt, c(1, 2), gt_to_dosage)
 
-# OutFLANK expects rows = individuals and columns = SNPs
+
+# -----------------------------
+# 8. Format SNP matrix for OutFLANK
+# -----------------------------
+
+# Transpose dosage matrix so rows = individuals and columns = SNPs
 SNPmat <- t(dos)
 
-cat("SNP matrix dimensions, individuals x loci:\n")
-print(dim(SNPmat))
-```
+# Replace missing genotypes with 9, which OutFLANK uses for missing data
+SNPmat[is.na(SNPmat)] <- 9
 
-## Match samples to estuary populations
+# Make sure matrix is numeric
+storage.mode(SNPmat) <- "numeric"
 
-```{r match-populations}
-sampleNames <- colnames(gt)
-
-# Sample names are formatted like 1_1, 10_10, etc.
-sampleNums <- as.integer(sub("_.*", "", sampleNames))
-
-popNames <- metadata$Estuary[
-  match(sampleNums, metadata$Sample.number)
-]
-
-cat("Number of unmatched samples:", sum(is.na(popNames)), "\n")
-print(table(popNames))
-
-head(data.frame(sampleNames, sampleNums, popNames), 20)
-```
-
-## Prepare data for OutFLANK
-
-OutFLANK uses `9` as the missing data code.
-
-```{r prepare-outflank}
+# Confirm dimensions match
 stopifnot(length(popNames) == nrow(SNPmat))
 stopifnot(length(locusNames) == ncol(SNPmat))
-stopifnot(sum(is.na(popNames)) == 0)
 
-SNPmat[is.na(SNPmat)] <- 9
-storage.mode(SNPmat) <- "numeric"
-```
 
-## Calculate FST values
+# -----------------------------
+# 9. Calculate FST values
+# -----------------------------
 
-```{r calculate-fst}
+# Create the FST dataframe required by OutFLANK
 FSTdf <- MakeDiploidFSTMat(
   SNPmat = SNPmat,
   locusNames = locusNames,
   popNames = popNames
 )
 
-cat("FST table dimensions:\n")
-print(dim(FSTdf))
 
-summary(FSTdf$FST)
-```
+# -----------------------------
+# 10. Run OutFLANK
+# -----------------------------
 
-## Run OutFLANK
-
-OutFLANK identifies loci with elevated FST relative to the genome-wide neutral distribution. SNPs with q-values below 0.05 were considered significant outliers.
-
-```{r run-outflank}
+# Run OutFLANK using seven estuary populations
+# Hmin = 0.1 removes very low heterozygosity SNPs
+# qthreshold = 0.05 flags significant outliers after multiple-testing correction
 out <- OutFLANK(
   FSTdf,
   NumberOfSamples = length(unique(popNames)),
   LeftTrimFraction = 0.05,
   RightTrimFraction = 0.05,
-  Hmin = hmin_value,
-  qthreshold = q_threshold
+  Hmin = 0.1,
+  qthreshold = 0.05
 )
 
-cat("Outlier summary:\n")
-print(table(out$results$OutlierFlag, useNA = "ifany"))
 
-cat("q-value summary:\n")
-print(summary(out$results$qvalues))
-```
+# -----------------------------
+# 11. View and summarize results
+# -----------------------------
 
-## Save results
+# View first few rows of results
+head(out$results)
 
-```{r save-results}
+# Count outlier and non-outlier SNPs
+table(out$results$OutlierFlag, useNA = "ifany")
+
+# Summarize q-values
+summary(out$results$qvalues)
+
+# Extract only significant outliers
 outliers <- subset(out$results, OutlierFlag == TRUE)
+
+# Sort outliers by q-value
 outliers <- outliers[order(outliers$qvalues), ]
 
-all_results_file <- file.path(
-  out_dir,
-  paste0("outflank_results_n218_", geno_label, "_clumped.csv")
+# View top outliers
+head(outliers, 20)
+
+
+# -----------------------------
+# 12. Save output files
+# -----------------------------
+
+# Save all OutFLANK results
+write.csv(
+  out$results,
+  "/mnt/jupiter/johnsonlab/Capstone_proj/Capstone_2026/outflank/outflank_results_n218_geno075_clumped.csv",
+  row.names = FALSE
 )
 
-outliers_file <- file.path(
-  out_dir,
-  paste0("outflank_outliers_n218_", geno_label, "_clumped.csv")
+# Save only significant outliers
+write.csv(
+  outliers,
+  "/mnt/jupiter/johnsonlab/Capstone_proj/Capstone_2026/outflank/outflank_outliers_n218_geno075_clumped.csv",
+  row.names = FALSE
 )
-
-write.csv(out$results, all_results_file, row.names = FALSE)
-write.csv(outliers, outliers_file, row.names = FALSE)
-
-cat("Saved all results to:", all_results_file, "\n")
-cat("Saved outliers to:", outliers_file, "\n")
-cat("Number of outliers:", nrow(outliers), "\n")
-
-head(outliers)
-```
