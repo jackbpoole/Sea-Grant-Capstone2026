@@ -1,151 +1,168 @@
-# -----------------------------
-# 1. Load required packages
-# -----------------------------
+# OutFLANK Analysis
 
-# vcfR is used to read and extract genotype information from VCF files
+## Purpose
+
+This script runs OutFLANK to identify SNPs with unusually high genetic differentiation among Olympia oyster estuary populations.
+
+## Required Packages
+
+```r
 library(vcfR)
-
-# OutFLANK is used to calculate FST and identify outlier SNPs
 library(OutFLANK)
+```
 
+* `vcfR` is used to read VCF files and extract genotype information.
+* `OutFLANK` is used to calculate FST values and identify outlier loci.
 
-# -----------------------------
-# 2. Define input file paths
-# -----------------------------
+## Input Files
 
-# Path to the filtered and LD-clumped VCF file
+```r
 vcf_file <- "/mnt/jupiter/johnsonlab/Capstone_proj/Capstone_2026/Preprocessing/n218_filtered_snps_geno_075_clumped.recode.vcf"
 
-# Path to metadata file containing sample numbers and estuary names
 metadata_file <- "/mnt/jupiter/johnsonlab/Capstone_proj/Capstone_2026/outflank/sample_table_218_clean (2).csv"
+```
 
+The metadata file contains:
 
-# -----------------------------
-# 3. Read metadata
-# -----------------------------
+* `Sample.number`
+* `Estuary`
 
-# Read metadata into R
-metadata <- read.csv(metadata_file, stringsAsFactors = FALSE)
+## Read Metadata
 
-# Remove extra spaces from estuary names
+```r
+metadata <- read.csv(
+  metadata_file,
+  stringsAsFactors = FALSE
+)
+
 metadata$Estuary <- trimws(metadata$Estuary)
 
-# Check metadata formatting
 head(metadata)
-
-# Check sample counts by estuary
 table(metadata$Estuary)
+```
 
+This imports the sample metadata and verifies the number of oysters assigned to each estuary.
 
-# -----------------------------
-# 4. Read VCF file
-# -----------------------------
+## Read VCF File
 
-# Load the VCF file
+```r
 vcf <- read.vcfR(vcf_file, verbose = FALSE)
 
-# Extract fixed VCF information, including chromosome/scaffold and position
 fixdf <- getFIX(vcf)
 
-# Create unique locus names using scaffold and position
-locusNames <- paste0(fixdf[, "CHROM"], ":", fixdf[, "POS"])
+locusNames <- paste0(
+  fixdf[, "CHROM"],
+  ":",
+  fixdf[, "POS"]
+)
+```
 
+This loads the VCF and creates a unique identifier for each SNP using scaffold and genomic position.
 
-# -----------------------------
-# 5. Extract genotype calls
-# -----------------------------
+## Extract Genotypes
 
-# Extract genotype field from the VCF
-gt <- extract.gt(vcf, element = "GT", as.numeric = FALSE)
+```r
+gt <- extract.gt(
+  vcf,
+  element = "GT",
+  as.numeric = FALSE
+)
 
-# Check SNP and sample dimensions
 dim(gt)
+```
 
+This extracts genotype calls for all individuals and loci.
 
-# -----------------------------
-# 6. Match samples to estuary populations
-# -----------------------------
+## Match Individuals to Estuaries
 
-# Get sample names from the VCF
+```r
 sampleNames <- colnames(gt)
 
-# Extract sample number from names like "1_1", "10_10", etc.
-sampleNums <- as.integer(sub("_.*", "", sampleNames))
+sampleNums <- as.integer(
+  sub("_.*", "", sampleNames)
+)
 
-# Match sample numbers to estuary names in metadata
 popNames <- metadata$Estuary[
-  match(sampleNums, metadata$Sample.number)
+  match(
+    sampleNums,
+    metadata$Sample.number
+  )
 ]
 
-# Confirm every sample matched to an estuary
 sum(is.na(popNames))
-
-# View population counts used in OutFLANK
 table(popNames)
+```
 
+This links each oyster in the VCF to its estuary of origin.
 
-# -----------------------------
-# 7. Convert genotypes to dosage format
-# -----------------------------
+`sum(is.na(popNames))` should return 0.
 
-# Function to convert VCF genotype calls into 0/1/2 dosage format
-# 0 = homozygous reference
-# 1 = heterozygous
-# 2 = homozygous alternate
-# NA = missing or unsupported genotype
+## Convert Genotypes to Dosage Format
+
+```r
 gt_to_dosage <- function(x) {
-  if (is.na(x) || x %in% c(".", "./.", ".|.")) return(NA_real_)
+
+  if (is.na(x) || x %in% c(".", "./.", ".|."))
+    return(NA_real_)
+
   x <- gsub("\\|", "/", x)
+
   a <- strsplit(x, "/", fixed = TRUE)[[1]]
-  if (length(a) != 2 || any(a == ".")) return(NA_real_)
+
+  if (length(a) != 2 || any(a == "."))
+    return(NA_real_)
+
   vals <- suppressWarnings(as.numeric(a))
-  if (any(is.na(vals))) return(NA_real_)
+
+  if (any(is.na(vals)))
+    return(NA_real_)
+
   s <- sum(vals)
-  if (!s %in% 0:2) return(NA_real_)
+
+  if (!s %in% 0:2)
+    return(NA_real_)
+
   return(s)
 }
+```
 
-# Apply dosage conversion to all SNPs and individuals
+This function converts genotypes into:
+
+* 0 = homozygous reference
+* 1 = heterozygous
+* 2 = homozygous alternate
+
+## Build SNP Matrix
+
+```r
 dos <- apply(gt, c(1, 2), gt_to_dosage)
 
-
-# -----------------------------
-# 8. Format SNP matrix for OutFLANK
-# -----------------------------
-
-# Transpose dosage matrix so rows = individuals and columns = SNPs
 SNPmat <- t(dos)
 
-# Replace missing genotypes with 9, which OutFLANK uses for missing data
 SNPmat[is.na(SNPmat)] <- 9
 
-# Make sure matrix is numeric
 storage.mode(SNPmat) <- "numeric"
+```
 
-# Confirm dimensions match
-stopifnot(length(popNames) == nrow(SNPmat))
-stopifnot(length(locusNames) == ncol(SNPmat))
+OutFLANK requires individuals as rows and SNPs as columns.
 
+Missing values are encoded as 9.
 
-# -----------------------------
-# 9. Calculate FST values
-# -----------------------------
+## Calculate FST Values
 
-# Create the FST dataframe required by OutFLANK
+```r
 FSTdf <- MakeDiploidFSTMat(
   SNPmat = SNPmat,
   locusNames = locusNames,
   popNames = popNames
 )
+```
 
+This calculates locus-specific FST values across estuary populations.
 
-# -----------------------------
-# 10. Run OutFLANK
-# -----------------------------
+## Run OutFLANK
 
-# Run OutFLANK using seven estuary populations
-# Hmin = 0.1 removes very low heterozygosity SNPs
-# qthreshold = 0.05 flags significant outliers after multiple-testing correction
+```r
 out <- OutFLANK(
   FSTdf,
   NumberOfSamples = length(unique(popNames)),
@@ -154,45 +171,42 @@ out <- OutFLANK(
   Hmin = 0.1,
   qthreshold = 0.05
 )
+```
 
+OutFLANK estimates a neutral FST distribution and identifies loci with significantly elevated differentiation.
 
-# -----------------------------
-# 11. View and summarize results
-# -----------------------------
+## Extract Outliers
 
-# View first few rows of results
-head(out$results)
+```r
+outliers <- subset(
+  out$results,
+  OutlierFlag == TRUE
+)
 
-# Count outlier and non-outlier SNPs
-table(out$results$OutlierFlag, useNA = "ifany")
+outliers <- outliers[
+  order(outliers$qvalues),
+]
+```
 
-# Summarize q-values
-summary(out$results$qvalues)
+Only loci with q-values below 0.05 are retained.
 
-# Extract only significant outliers
-outliers <- subset(out$results, OutlierFlag == TRUE)
+## Save Results
 
-# Sort outliers by q-value
-outliers <- outliers[order(outliers$qvalues), ]
-
-# View top outliers
-head(outliers, 20)
-
-
-# -----------------------------
-# 12. Save output files
-# -----------------------------
-
-# Save all OutFLANK results
+```r
 write.csv(
   out$results,
-  "/mnt/jupiter/johnsonlab/Capstone_proj/Capstone_2026/outflank/outflank_results_n218_geno075_clumped.csv",
+  "outflank_results_n218_geno075_clumped.csv",
   row.names = FALSE
 )
 
-# Save only significant outliers
 write.csv(
   outliers,
-  "/mnt/jupiter/johnsonlab/Capstone_proj/Capstone_2026/outflank/outflank_outliers_n218_geno075_clumped.csv",
+  "outflank_outliers_n218_geno075_clumped.csv",
   row.names = FALSE
 )
+```
+
+The full results file contains all SNPs tested by OutFLANK.
+
+The outlier file contains only significant loci identified as candidate outliers.
+
