@@ -2,7 +2,8 @@
 Repository for the Sea Grant California Johnson Lab Bioinformatics Capstone 2026 Team 
 
 Contact information:
-Jack Poole: jbpoole@calpoly.edu, jackbpoole@gmail.com, +1 (503)-858-0105
+Jack Poole: 
+jbpoole@calpoly.edu, jackbpoole@gmail.com, +1 (503)-858-0105
 
 Repository Structure:
 
