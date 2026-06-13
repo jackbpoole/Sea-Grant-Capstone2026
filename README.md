@@ -1,9 +1,17 @@
 # Sea-Grant-Capstone2026
 Repository for the Sea Grant California Johnson Lab Bioinformatics Capstone 2026 Team 
 
+Contact information:
+Jack Poole: jbpoole@calpoly.edu, jackbpoole@gmail.com, +1 (503)-858-0105
+
 Repository Structure:
 
-- Preprocessing Steps.Rmd — SNP filtering, quality control, Hardy–Weinberg filtering, and LD clumping.
+- SNP_Preprocessing Folder — Folder for required files to get SNP data ready for outlier detection
+    - Preprocessing Steps.Rmd — Markdown document for running all necessary filtering steps
+    - filter_hwe_by_pop.pl — dDocent's script for analyzing Hardy-Weinberg equilibrium of SNPs within each pop
+    - n218_popmap.txt — population map for the n218 vcf of genotyped oysters. Needed for multiple sections of Preprocessing Steps.Rmd
+    - pop_missing_filter.sh — dDocent's script for removing SNPs with low call rates within each population
+- Observed Heterozygosity and ANOVA Analysis.md — script for calculating heterozygosity within each population
 - pcadapt Steps.Rmd — PCA-based genome scan for candidate loci associated with population structure.
 - OutFLANK Steps.Rmd — FST-based genome scan used to identify loci showing elevated genetic differentiation among estuary populations.
 
